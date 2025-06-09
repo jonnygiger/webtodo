@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 const data = await response.json();
                 localStorage.setItem('session_token', data.session_token);
+                localStorage.setItem('user_id', data.user_id); // Store user_id
                 localStorage.setItem('username', data.username);
                 loginMessage.textContent = 'Login successful!';
                 loginUsernameInput.value = '';
@@ -134,8 +135,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
+            const headers = {};
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
             const response = await fetch(apiUrl, {
-                headers: { 'X-Auth-Token': token }
+                headers: headers
             });
             if (!response.ok) {
                 if (response.status === 401) { // Unauthorized
@@ -198,12 +203,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+            const headers = {
+                'Content-Type': 'application/json' // POST request with JSON body
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
             const response = await fetch(apiUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Auth-Token': token
-                },
+                headers: headers,
                 body: JSON.stringify({ description }),
             });
             if (!response.ok) {
@@ -230,9 +238,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
+            const headers = {}; // PUT request, no JSON body in this case
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
             const response = await fetch(`${apiUrl}/${id}/complete`, {
                 method: 'PUT',
-                headers: { 'X-Auth-Token': token }
+                headers: headers
             });
             if (!response.ok) {
                 if (response.status === 401) { // Unauthorized

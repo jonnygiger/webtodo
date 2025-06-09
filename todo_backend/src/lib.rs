@@ -2,12 +2,12 @@ extern crate rocket; // Removed #[macro_use]
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy; // Added for GLOBAL_USER_ID
 use dashmap::DashMap;
-use rocket::{get, post, put, routes, State}; // State is already here
+use rocket::{get, post, put, routes, State, catch, catchers}; // Added catch, catchers. State is already here.
 use rocket::fs::{FileServer, relative}; // Removed NamedFile
 use rocket::http::Status;
 use rocket::request::FromParam;
 use rocket::serde::json::Json;
-use serde::{Deserialize, Deserializer, Serialize, Serializer}; // Removed 'de'
+use serde::{Deserialize, Deserializer, Serialize, Serializer}; // Removed 'de'. Ensure Serialize is here for ErrorResponse.
 use std::ops::Deref;
 use std::sync::RwLock;
 use uuid::Uuid; // This is uuid v1.0
@@ -15,6 +15,7 @@ use std::hash::{Hash, Hasher};
 use std::fmt; // Added for Display
 use rocket::form::{self, FromFormField, ValueField}; // Required for UserId manual impl
 use bcrypt::{hash, DEFAULT_COST, verify}; // Added verify for login
+use rocket::request::{FromRequest, Outcome, Request}; // Added for AuthenticatedUser
 // Removed: use rocket::request::Request;
 // State is already imported via line 4 use rocket::{..., State};
 // Uuid is imported on line 12, needed for GLOBAL_USER_ID if parsing from string, or if UserId constructor needs it.
@@ -177,6 +178,64 @@ pub struct TodoApp {
 
 // AuthenticatedUser guard is now fully removed.
 
+// New AuthenticatedUser request guard
+pub struct AuthenticatedUser(pub UserId);
+
+// Define the AuthError enum
+#[derive(Debug, Clone, Copy)] // Added Clone, Copy
+pub enum AuthError {
+    MissingOrMalformedHeader,
+    InvalidToken,
+    NoSessionState, // Added for state issues
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AuthenticatedUser {
+    type Error = (); // Error type is () as we store specific error in local_cache
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        // Get State<TodoApp>
+        let app_state = match req.rocket().state::<TodoApp>() {
+            Some(s) => s,
+            None => {
+                req.local_cache(|| Some(AuthError::NoSessionState));
+                return rocket::request::Outcome::Forward(rocket::http::Status::InternalServerError);
+            }
+        };
+
+        // Retrieve Authorization header
+        let auth_header = req.headers().get_one("Authorization");
+
+        match auth_header {
+            Some(header_value) if header_value.starts_with("Bearer ") => {
+                let token = &header_value["Bearer ".len()..];
+
+                if token.is_empty() {
+                    req.local_cache(|| Some(AuthError::MissingOrMalformedHeader));
+                    return rocket::request::Outcome::Forward(rocket::http::Status::Unauthorized);
+                }
+
+                // Look up token in SessionStore
+                match app_state.sessions.get(token) {
+                    Some(user_id_ref) => {
+                        let user_id = *user_id_ref.value();
+                        Outcome::Success(AuthenticatedUser(user_id))
+                    }
+                    None => {
+                        req.local_cache(|| Some(AuthError::InvalidToken));
+                        Outcome::Forward(rocket::http::Status::Unauthorized) // Token not found
+                    }
+                }
+            }
+            _ => {
+                // Header missing or not "Bearer "
+                req.local_cache(|| Some(AuthError::MissingOrMalformedHeader));
+                Outcome::Forward(rocket::http::Status::Unauthorized)
+            }
+        }
+    }
+}
+
 impl TodoApp {
     pub fn new() -> Self {
         TodoApp {
@@ -188,16 +247,16 @@ impl TodoApp {
 }
 
 #[post("/", data = "<item_data>")] // Changed from "/todos" to "/"
-pub async fn add_todo(item_data: Json<TodoItemDescription>, app_state: &State<TodoApp>) -> Result<Json<TodoItem>, Status> {
+pub async fn add_todo(item_data: Json<TodoItemDescription>, app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<TodoItem>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID
-    let user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser
+    let user_id = user.0;
 
     let id = AppUuid::new_v4();
     let created_at = Utc::now();
     let new_item = TodoItem {
         id,
-        user_id, // Use GLOBAL_USER_ID
+        user_id, // user_id is auth_user.0
         description: item_data.description.clone(),
         completed: false,
         created_at,
@@ -210,10 +269,10 @@ pub async fn add_todo(item_data: Json<TodoItemDescription>, app_state: &State<To
 }
 
 #[get("/<id>")] // Changed from "/todos/<id>" to "/<id>"
-pub async fn get_todo(id: AppUuid, app_state: &State<TodoApp>) -> Result<Json<TodoItem>, Status> {
+pub async fn get_todo(id: AppUuid, app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<TodoItem>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID for check
-    let current_user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser for check
+    let current_user_id = user.0;
 
     let item_owned = {
         let storage_map = app_state.todos.read().unwrap();
@@ -232,10 +291,10 @@ pub async fn get_todo(id: AppUuid, app_state: &State<TodoApp>) -> Result<Json<To
 }
 
 #[put("/<id>/complete")] // Changed from "/todos/<id>/complete" to "/<id>/complete"
-pub async fn complete_todo(id: AppUuid, app_state: &State<TodoApp>) -> Result<Json<TodoItem>, Status> {
+pub async fn complete_todo(id: AppUuid, app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<TodoItem>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID for check
-    let current_user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser for check
+    let current_user_id = user.0;
 
     let storage_map = app_state.todos.write().unwrap();
     let outcome = if let Some(mut item_ref_mut) = storage_map.get_mut(&id) {
@@ -243,7 +302,7 @@ pub async fn complete_todo(id: AppUuid, app_state: &State<TodoApp>) -> Result<Js
             item_ref_mut.completed = true;
             Ok(Json(item_ref_mut.value().clone()))
         } else {
-            Err(Status::NotFound)
+            Err(Status::NotFound) // Or Status::Forbidden if the item exists but belongs to another user
         }
     } else {
         Err(Status::NotFound)
@@ -252,10 +311,10 @@ pub async fn complete_todo(id: AppUuid, app_state: &State<TodoApp>) -> Result<Js
 }
 
 #[get("/search?<description>")] // Changed from "/todos/search?<description>"
-pub async fn search_todos(description: Option<String>, app_state: &State<TodoApp>) -> Result<Json<Vec<TodoItem>>, Status> {
+pub async fn search_todos(description: Option<String>, app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<Vec<TodoItem>>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID for filter
-    let current_user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser for filter
+    let current_user_id = user.0;
 
     let storage_map = app_state.todos.read().unwrap();
     let items: Vec<TodoItem> = storage_map
@@ -271,10 +330,10 @@ pub async fn search_todos(description: Option<String>, app_state: &State<TodoApp
 }
 
 #[get("/?<completed>")] // Corrected: Added leading /
-pub async fn list_todos_by_status(completed: Option<bool>, app_state: &State<TodoApp>) -> Result<Json<Vec<TodoItem>>, Status> {
+pub async fn list_todos_by_status(completed: Option<bool>, app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<Vec<TodoItem>>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID for filter
-    let current_user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser for filter
+    let current_user_id = user.0;
 
     let storage_map = app_state.todos.read().unwrap();
     let items: Vec<TodoItem> = storage_map
@@ -290,10 +349,10 @@ pub async fn list_todos_by_status(completed: Option<bool>, app_state: &State<Tod
 }
 
 #[get("/count")] // Changed from "/todos/count"
-pub async fn get_todos_count(app_state: &State<TodoApp>) -> Result<Json<usize>, Status> {
+pub async fn get_todos_count(app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<usize>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID for filter
-    let current_user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser for filter
+    let current_user_id = user.0;
 
     let storage_map = app_state.todos.read().unwrap();
     let count = storage_map
@@ -304,10 +363,10 @@ pub async fn get_todos_count(app_state: &State<TodoApp>) -> Result<Json<usize>, 
 }
 
 #[get("/count?<completed>")] // Changed from "/todos/count?<completed>"
-pub async fn get_todos_count_by_status(completed: bool, app_state: &State<TodoApp>) -> Result<Json<usize>, Status> {
+pub async fn get_todos_count_by_status(completed: bool, app_state: &State<TodoApp>, user: AuthenticatedUser) -> Result<Json<usize>, Status> {
     // Removed req: &Request<'_>
-    // Using GLOBAL_USER_ID for filter
-    let current_user_id = *GLOBAL_USER_ID;
+    // Using AuthenticatedUser for filter
+    let current_user_id = user.0;
 
     let storage_map = app_state.todos.read().unwrap();
     let count = storage_map
@@ -394,8 +453,81 @@ fn todo_routes() -> Vec<rocket::Route> {
     routes![add_todo, get_todo, complete_todo, search_todos, list_todos_by_status, get_todos_count, get_todos_count_by_status]
 }
 
+// Guard to extract Bearer token string
+struct BearerToken(String);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for BearerToken {
+    type Error = (); // Align with successful pattern: communicate error via local_cache + Forward(Status)
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match req.headers().get_one("Authorization") {
+            Some(auth_header) if auth_header.starts_with("Bearer ") => {
+                let token = auth_header["Bearer ".len()..].to_string();
+                if token.is_empty() {
+                    req.local_cache(|| Some(AuthError::MissingOrMalformedHeader));
+                    Outcome::Forward(Status::Unauthorized) // Or BadRequest, client should handle. Unauthorized seems fit.
+                } else {
+                    Outcome::Success(BearerToken(token))
+                }
+            }
+            _ => {
+                req.local_cache(|| Some(AuthError::MissingOrMalformedHeader));
+                Outcome::Forward(Status::Unauthorized) // Header missing or not Bearer
+            }
+        }
+    }
+}
+
+#[post("/logout")]
+async fn logout_user(app_state: &State<TodoApp>, token_guard: Option<BearerToken>) -> Status {
+    if let Some(bearer_token) = token_guard {
+        // A Bearer token was provided in the header
+        if !bearer_token.0.is_empty() { // Should be guaranteed by BearerToken guard if it's Some
+            app_state.sessions.remove(&bearer_token.0);
+        }
+    }
+    // Always return NoContent for logout, regardless of whether a token was provided or found.
+    // This simplifies client-side logic and ensures the session is treated as terminated.
+    Status::NoContent
+}
+
 fn auth_routes() -> Vec<rocket::Route> {
-    routes![register, login] // Added login route
+    routes![register, login, logout_user] // Added logout_user
+}
+
+// Serializable error response struct
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
+    message: String,
+}
+
+#[catch(401)] // Catches Unauthorized
+fn unauthorized_catcher(_status: Status, req: &Request<'_>) -> Json<ErrorResponse> {
+    let default_message = "Access denied. Valid authentication token required.".to_string();
+    let default_error_code = "unauthorized".to_string();
+
+    let (error_code, message) = match req.local_cache(|| None as Option<AuthError>) {
+        Some(AuthError::MissingOrMalformedHeader) => ("missing_or_malformed_header".to_string(), "Authorization header is missing or malformed.".to_string()),
+        Some(AuthError::InvalidToken) => ("invalid_token".to_string(), "Session token is invalid or expired.".to_string()),
+        _ => (default_error_code, default_message), // Includes NoSessionState if it somehow led to 401, or if cache is empty
+    };
+
+    Json(ErrorResponse { error: error_code, message })
+}
+
+#[catch(500)] // Catches Internal Server Error
+fn internal_server_error_catcher(_status: Status, req: &Request<'_>) -> Json<ErrorResponse> {
+    let default_message = "An unexpected error occurred on the server.".to_string();
+    let default_error_code = "internal_server_error".to_string();
+
+    let (error_code, message) = match req.local_cache(|| None as Option<AuthError>) {
+        Some(AuthError::NoSessionState) => ("no_session_state".to_string(), "Critical application state (TodoApp) not found.".to_string()),
+        _ => (default_error_code, default_message), // If cache is empty or other AuthError
+    };
+
+    Json(ErrorResponse { error: error_code, message })
 }
 
 // This function can be used by main.rs to launch the server
@@ -407,4 +539,5 @@ pub fn rocket_instance() -> rocket::Rocket<rocket::Build> {
         .mount("/static", FileServer::from(relative!("static"))) // New file server for static assets
         .mount("/api/todos", todo_routes()) // Grouped todo routes
         .mount("/auth", auth_routes()) // Added auth routes
+        .register("/", catchers![unauthorized_catcher, internal_server_error_catcher]) // Register catchers
 }
