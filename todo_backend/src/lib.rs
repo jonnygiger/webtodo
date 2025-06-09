@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use rocket::{get, post, put, routes, State};
+use rocket::fs::{FileServer, relative, NamedFile};
 use rocket::http::Status;
 use rocket::request::FromParam;
 use rocket::serde::json::Json;
@@ -176,11 +177,19 @@ pub async fn get_todos_count_by_status(storage: &State<TodoStorage>, completed: 
     Json(count)
 }
 
+#[get("/")]
+async fn serve_index() -> Option<rocket::fs::NamedFile> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("static/index.html");
+    rocket::fs::NamedFile::open(path).await.ok()
+}
+
 // This function can be used by main.rs to launch the server
 // and by tests to get a Rocket instance.
 pub fn rocket_instance() -> rocket::Rocket<rocket::Build> {
     let todo_storage: TodoStorage = RwLock::new(DashMap::<AppUuid, TodoItem>::new()); // Use AppUuid
     rocket::build()
         .manage(todo_storage)
-        .mount("/", routes![add_todo, get_todo, complete_todo, search_todos, list_todos_by_status, get_todos_count, get_todos_count_by_status])
+        .mount("/", routes![serve_index]) // New route for index.html
+        .mount("/static", FileServer::from(relative!("static"))) // New file server for static assets
+        .mount("/api", routes![add_todo, get_todo, complete_todo, search_todos, list_todos_by_status, get_todos_count, get_todos_count_by_status])
 }
