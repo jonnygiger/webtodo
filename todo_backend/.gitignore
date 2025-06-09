@@ -1,0 +1,13 @@
+# Ignore Rust build artifacts
+target/
+
+# Ignore Cargo lock file (optional, but good for libraries if not committed)
+# Cargo.lock
+
+# IDE-specific files
+.idea/
+.vscode/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
