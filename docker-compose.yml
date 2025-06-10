@@ -1,0 +1,44 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: todo_postgres_db
+    environment:
+      POSTGRES_USER: myuser        # Changed from 'user' to 'myuser'
+      POSTGRES_PASSWORD: mypassword  # Changed from 'password' to 'mypassword'
+      POSTGRES_DB: todo_db
+    ports:
+      - "5432:5432" # Expose port for local access if needed, not strictly necessary for inter-container communication
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d todo_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: todo_backend/Dockerfile
+    container_name: todo_rust_app
+    depends_on:
+      db:
+        condition: service_healthy # Wait for db to be healthy
+    ports:
+      - "8000:8000"
+    environment:
+      ROCKET_ADDRESS: "0.0.0.0" # Important for Rocket to bind to all interfaces in Docker
+      DATABASE_URL: "postgres://myuser:mypassword@db:5432/todo_db" # Connect to 'db' service on port 5432
+      # ROCKET_LOG_LEVEL: "debug" # Optional: for more verbose logging
+    # Add a command to run migrations before starting the app server
+    # This requires diesel_cli to be available in the final image, or a separate migration script.
+    # For simplicity, we'll assume the app runs migrations on startup if configured to do so.
+    # If not, migrations need to be run manually or via an entrypoint script.
+    # The current lib.rs does not automatically run migrations, so this would be a manual step
+    # or require adding migration running logic to main.rs or db.rs.
+
+volumes:
+  postgres_data: # Persists database data across container restarts

@@ -1,4 +1,4 @@
-name: Rust CI
+name: Rust CI with Docker
 
 on:
   push:
@@ -7,16 +7,64 @@ on:
     branches: [ main ]
 
 jobs:
-  build_and_test:
+  build_and_test_dockerized:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        override: true
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Compose
+      # Docker and docker-compose are usually pre-installed on GitHub-hosted runners
+      # If not, you might need actions/setup-docker or similar
+      run: |
+        docker-compose --version
+        docker --version
+
+    - name: Build and start services
+      run: docker-compose up -d --build app db # Explicitly list services to build and start
+
+    - name: Wait for services to be healthy
+      # Docker-compose up with --wait is available in newer versions, but healthchecks provide more control
+      # This loop checks the health status of the 'app' and 'db' services.
+      # Adjust timeout and interval as needed.
+      run: |
+        echo "Waiting for services to become healthy..."
+        TIMEOUT=300 # 5 minutes timeout
+        INTERVAL=10 # Check every 10 seconds
+        ELAPSED=0
+        while true; do
+          DB_STATUS=$(docker-compose ps db | grep 'healthy' | wc -l)
+          # APP_STATUS=$(docker-compose ps app | grep 'healthy' | wc -l) # If app has healthcheck
+          # For now, we assume app starts if DB is healthy and migrations run
+          # If app had its own healthcheck in docker-compose.yml, we'd check it too.
+
+          if [ "$DB_STATUS" -ge 1 ]; then
+            echo "Database service is healthy."
+            break
+          fi
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "Timeout waiting for services to become healthy."
+            docker-compose logs db
+            docker-compose logs app
+            exit 1
+          fi
+          sleep $INTERVAL
+          ELAPSED=$(($ELAPSED + $INTERVAL))
+          echo "Still waiting... ($ELAPSED/$TIMEOUT seconds)"
+        done
+
+    - name: Run Database Migrations
+      run: docker-compose exec -T app diesel migration run
+      # The -T option disables pseudo-tty allocation, which is recommended for automated scripts.
+
     - name: Run tests
-      run: cargo test
-      working-directory: ./todo_backend
+      run: |
+        # Ensure the test command is run inside the 'app' container
+        # Using --test-threads=1 can be helpful if tests interfere with each other
+        # or if database interactions need to be sequential.
+        docker-compose exec -T app cargo test -- --test-threads=1
+
+    - name: Stop and remove containers, networks, volumes
+      if: always() # Ensure cleanup happens even if previous steps fail
+      run: docker-compose down -v
