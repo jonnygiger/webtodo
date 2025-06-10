@@ -1,0 +1,10 @@
+# .dockerignore
+**/target
+**/.*
+*~
+*.log
+Dockerfile
+docker-compose.yml
+.git
+.github
+# Add other files/dirs you don't want in the Docker build context
