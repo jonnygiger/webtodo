@@ -37,11 +37,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry     --mount=type=cache,t
 FROM debian:bullseye-slim
 
 # Install runtime dependencies (libpq for PostgreSQL client)
-RUN apt-get update && apt-get install -y libpq5 ca-certificates     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libpq5 ca-certificates curl     && rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled binary and diesel_cli from the builder stage
 COPY --from=builder /usr/local/bin/todo_backend_server /usr/local/bin/todo_backend_server
 COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
+COPY todo_backend/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Copy static files if your application serves them
 # COPY todo_backend/static /app/static
@@ -49,9 +50,12 @@ COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 # Set working directory
 WORKDIR /app
 
+# Ensure entrypoint script is executable
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Expose the port the app runs on (Rocket default is 8000)
 EXPOSE 8000
 
 # Command to run the application
 # The DATABASE_URL will be provided by docker-compose
-CMD ["/usr/local/bin/todo_backend_server"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
