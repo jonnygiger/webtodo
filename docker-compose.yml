@@ -33,6 +33,12 @@ services:
       ROCKET_ADDRESS: "0.0.0.0" # Important for Rocket to bind to all interfaces in Docker
       DATABASE_URL: "postgres://myuser:mypassword@db:5432/todo_db" # Connect to 'db' service on port 5432
       # ROCKET_LOG_LEVEL: "debug" # Optional: for more verbose logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:8000/api/todos && exit 0 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Give the app some time to start before first health check
     # Add a command to run migrations before starting the app server
     # This requires diesel_cli to be available in the final image, or a separate migration script.
     # For simplicity, we'll assume the app runs migrations on startup if configured to do so.

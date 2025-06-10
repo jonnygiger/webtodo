@@ -33,19 +33,21 @@ jobs:
         INTERVAL=10 # Check every 10 seconds
         ELAPSED=0
         while true; do
-          DB_STATUS=$(docker compose ps db | grep 'healthy' | wc -l)
-          # APP_STATUS=$(docker compose ps app | grep 'healthy' | wc -l) # If app has healthcheck
-          # For now, we assume app starts if DB is healthy and migrations run
-          # If app had its own healthcheck in docker-compose.yml, we'd check it too.
+          DB_STATUS=$(docker compose ps db | grep 'healthy' | wc -l || true) # Ensure command doesn't fail if no match
+          APP_STATUS=$(docker compose ps app | grep 'healthy' | wc -l || true) # Ensure command doesn't fail if no match
 
-          if [ "$DB_STATUS" -ge 1 ]; then
-            echo "Database service is healthy."
+          if [ "$DB_STATUS" -ge 1 ] && [ "$APP_STATUS" -ge 1 ]; then
+            echo "Database and Application services are healthy."
             break
+          else
+            echo "DB Status: $DB_STATUS, App Status: $APP_STATUS"
           fi
 
           if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
             echo "Timeout waiting for services to become healthy."
+            echo "--- DB Logs ---"
             docker compose logs db
+            echo "--- App Logs ---"
             docker compose logs app
             exit 1
           fi
@@ -54,9 +56,10 @@ jobs:
           echo "Still waiting... ($ELAPSED/$TIMEOUT seconds)"
         done
 
-    - name: Run Database Migrations
-      run: docker compose exec -T app diesel migration run
-      # The -T option disables pseudo-tty allocation, which is recommended for automated scripts.
+    # Migrations are now handled by the entrypoint.sh script in the app container
+    # - name: Run Database Migrations
+    #   run: docker compose exec -T app diesel migration run
+    #   # The -T option disables pseudo-tty allocation, which is recommended for automated scripts.
 
     - name: Run tests
       run: |
