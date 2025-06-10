@@ -17,11 +17,11 @@ jobs:
       # Docker and docker-compose are usually pre-installed on GitHub-hosted runners
       # If not, you might need actions/setup-docker or similar
       run: |
-        docker-compose --version
+        docker compose version
         docker --version
 
     - name: Build and start services
-      run: docker-compose up -d --build app db # Explicitly list services to build and start
+      run: docker compose up -d --build app db # Explicitly list services to build and start
 
     - name: Wait for services to be healthy
       # Docker-compose up with --wait is available in newer versions, but healthchecks provide more control
@@ -33,8 +33,8 @@ jobs:
         INTERVAL=10 # Check every 10 seconds
         ELAPSED=0
         while true; do
-          DB_STATUS=$(docker-compose ps db | grep 'healthy' | wc -l)
-          # APP_STATUS=$(docker-compose ps app | grep 'healthy' | wc -l) # If app has healthcheck
+          DB_STATUS=$(docker compose ps db | grep 'healthy' | wc -l)
+          # APP_STATUS=$(docker compose ps app | grep 'healthy' | wc -l) # If app has healthcheck
           # For now, we assume app starts if DB is healthy and migrations run
           # If app had its own healthcheck in docker-compose.yml, we'd check it too.
 
@@ -45,8 +45,8 @@ jobs:
 
           if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
             echo "Timeout waiting for services to become healthy."
-            docker-compose logs db
-            docker-compose logs app
+            docker compose logs db
+            docker compose logs app
             exit 1
           fi
           sleep $INTERVAL
@@ -55,7 +55,7 @@ jobs:
         done
 
     - name: Run Database Migrations
-      run: docker-compose exec -T app diesel migration run
+      run: docker compose exec -T app diesel migration run
       # The -T option disables pseudo-tty allocation, which is recommended for automated scripts.
 
     - name: Run tests
@@ -63,8 +63,8 @@ jobs:
         # Ensure the test command is run inside the 'app' container
         # Using --test-threads=1 can be helpful if tests interfere with each other
         # or if database interactions need to be sequential.
-        docker-compose exec -T app cargo test -- --test-threads=1
+        docker compose exec -T app cargo test -- --test-threads=1
 
     - name: Stop and remove containers, networks, volumes
       if: always() # Ensure cleanup happens even if previous steps fail
-      run: docker-compose down -v
+      run: docker compose down -v
