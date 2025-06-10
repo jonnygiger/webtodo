@@ -6,9 +6,6 @@ mod tests {
     use todo_backend::*; // Import all public items from todo_backend crate
     use uuid::Uuid; // For Uuid parsing
 
-    // Define the same constant UUID string here for test comparisons
-    const EXPECTED_GLOBAL_USER_UUID_STR: &str = "018f9db0-0c9f-7008-9089-47110058134A";
-
     // Helper function to create a test client
     fn test_client() -> Client {
         let rocket_instance = todo_backend::rocket_instance();
@@ -105,9 +102,32 @@ mod tests {
     #[test]
     fn test_add_todo() {
         let client = test_client();
+        let username = format!("testuser_add_todo_{}", Uuid::new_v4());
+        let password = "password123";
+
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_id = user_info.id; // Corrected: user_id
+
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
+
+        // Add todo item
         let description = "Test todo item - add";
         let response = client.post("/api/todos")
             .header(ContentType::JSON)
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .body(json!({ "description": description }).to_string())
             .dispatch();
 
@@ -115,211 +135,369 @@ mod tests {
         let item = response.into_json::<TodoItem>().unwrap();
         assert_eq!(item.description, description);
         assert!(!item.completed);
-
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
-        assert_eq!(item.user_id.0, expected_user_uuid, "UserId does not match GLOBAL_USER_ID");
+        assert_eq!(item.user_id, user_id, "UserId does not match the logged-in user's ID");
     }
 
     #[test]
     fn test_get_todo() {
         let client = test_client();
-        let description = "Test todo item - get";
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
+        let username = format!("testuser_get_todo_{}", Uuid::new_v4());
+        let password = "password123";
 
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_id = user_info.id;
+
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
+
+        // Add todo item
+        let description = "Test todo item - get";
         let add_response = client.post("/api/todos")
             .header(ContentType::JSON)
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .body(json!({ "description": description }).to_string())
             .dispatch();
         assert_eq!(add_response.status(), Status::Ok);
         let added_item = add_response.into_json::<TodoItem>().unwrap();
         let item_id = added_item.id;
-        assert_eq!(added_item.user_id.0, expected_user_uuid, "UserId on add does not match GLOBAL_USER_ID");
+        assert_eq!(added_item.user_id, user_id, "UserId on add does not match the logged-in user's ID");
 
-        let response = client.get(format!("/api/todos/{}", item_id)).dispatch();
+        // Get todo item
+        let response = client.get(format!("/api/todos/{}", item_id))
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response.status(), Status::Ok);
         let fetched_item = response.into_json::<TodoItem>().unwrap();
         assert_eq!(fetched_item.id, item_id);
         assert_eq!(fetched_item.description, description);
-        assert_eq!(fetched_item.user_id.0, expected_user_uuid, "UserId on get does not match GLOBAL_USER_ID");
+        assert_eq!(fetched_item.user_id, user_id, "UserId on get does not match the logged-in user's ID");
 
-        // Test retrieving a non-existing item (this part remains the same, no user_id check needed)
+        // Test retrieving a non-existing item
         let non_existing_id = AppUuid::new_v4();
-        let response_not_found = client.get(format!("/api/todos/{}", non_existing_id)).dispatch();
+        let response_not_found = client.get(format!("/api/todos/{}", non_existing_id))
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_not_found.status(), Status::NotFound);
     }
 
     #[test]
     fn test_complete_todo() {
         let client = test_client();
-        let description = "Test todo item - complete";
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
+        let username = format!("testuser_complete_todo_{}", Uuid::new_v4());
+        let password = "password123";
 
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_id = user_info.id;
+
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
+
+        // Add todo item
+        let description = "Test todo item - complete";
         let add_response = client.post("/api/todos")
             .header(ContentType::JSON)
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .body(json!({ "description": description }).to_string())
             .dispatch();
         assert_eq!(add_response.status(), Status::Ok);
         let added_item = add_response.into_json::<TodoItem>().unwrap();
         let item_id = added_item.id;
-        assert_eq!(added_item.user_id.0, expected_user_uuid);
+        assert_eq!(added_item.user_id, user_id);
 
-        let complete_response = client.put(format!("/api/todos/{}/complete", item_id)).dispatch();
+        // Complete todo item
+        let complete_response = client.put(format!("/api/todos/{}/complete", item_id))
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(complete_response.status(), Status::Ok);
         let completed_item = complete_response.into_json::<TodoItem>().unwrap();
         assert_eq!(completed_item.id, item_id);
         assert!(completed_item.completed);
-        assert_eq!(completed_item.user_id.0, expected_user_uuid);
+        assert_eq!(completed_item.user_id, user_id);
 
-        let get_response = client.get(format!("/api/todos/{}", item_id)).dispatch();
+        // Get todo item to verify completion
+        let get_response = client.get(format!("/api/todos/{}", item_id))
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(get_response.status(), Status::Ok);
         let fetched_item = get_response.into_json::<TodoItem>().unwrap();
         assert!(fetched_item.completed);
-        assert_eq!(fetched_item.user_id.0, expected_user_uuid);
+        assert_eq!(fetched_item.user_id, user_id);
 
+        // Test completing a non-existing item
         let non_existing_id = AppUuid::new_v4();
-        let response_not_found = client.put(format!("/api/todos/{}/complete", non_existing_id)).dispatch();
+        let response_not_found = client.put(format!("/api/todos/{}/complete", non_existing_id))
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_not_found.status(), Status::NotFound);
     }
 
     #[test]
     fn test_search_todos() {
         let client = test_client();
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
+        let username = format!("testuser_search_todos_{}", Uuid::new_v4());
+        let password = "password123";
 
-        client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Learn Rust for GLOBAL user" }).to_string()).dispatch();
-        client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Learn Rocket for GLOBAL user" }).to_string()).dispatch();
-        client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Build an API for GLOBAL user" }).to_string()).dispatch();
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_id = user_info.id;
 
-        let response = client.get("/api/todos/search?description=learn").dispatch();
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
+
+        // Add todo items
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Learn Rust for this user" }).to_string()).dispatch();
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Learn Rocket for this user" }).to_string()).dispatch();
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Build an API for this user" }).to_string()).dispatch();
+
+        // Search todo items
+        let response = client.get("/api/todos/search?description=learn")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response.status(), Status::Ok);
         let items = response.into_json::<Vec<TodoItem>>().unwrap();
         assert_eq!(items.len(), 2);
         for item in items {
-            assert_eq!(item.user_id.0, expected_user_uuid);
+            assert_eq!(item.user_id, user_id);
             assert!(item.description.to_lowercase().contains("learn"));
         }
 
-        let response_all = client.get("/api/todos/search").dispatch();
+        // Search all todo items for the user
+        let response_all = client.get("/api/todos/search")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_all.status(), Status::Ok);
         let items_all = response_all.into_json::<Vec<TodoItem>>().unwrap();
-        assert_eq!(items_all.len(), 3); // Assuming these are the only todos for this user
+        assert_eq!(items_all.len(), 3);
         for item in items_all {
-            assert_eq!(item.user_id.0, expected_user_uuid);
+            assert_eq!(item.user_id, user_id);
         }
     }
 
     #[test]
     fn test_list_todos_by_status() {
         let client = test_client();
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
+        let username = format!("testuser_list_status_{}", Uuid::new_v4());
+        let password = "password123";
 
-        // Clear previous todos for this global user by fetching them to ensure count is clean for this test
-        // This is a simple way to "reset" state for this test, specific to GLOBAL_USER_ID context
-        // More robust test setup would involve clearing DB or using unique users per test.
-        let initial_todos = client.get("/api/todos").dispatch().into_json::<Vec<TodoItem>>().unwrap_or_default();
-        for _todo in initial_todos { // Prefixed with _
-            // This part is tricky, as we don't have a delete endpoint yet.
-            // For now, we'll assume tests run in an environment where this GLOBAL_USER_ID has no prior items,
-            // or that prior items don't interfere with counts for *newly added* items in *this* test.
-            // This highlights a limitation of the GLOBAL_USER_ID approach for test isolation.
-        }
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_id = user_info.id;
 
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
 
-        let r1 = client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Pending Task List" }).to_string()).dispatch();
-        let _item1_id = r1.into_json::<TodoItem>().unwrap().id;
-        client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Another Pending List" }).to_string()).dispatch();
-
-        let r3 = client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Completed Task List" }).to_string()).dispatch();
+        // Add todo items
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Pending Task List" }).to_string()).dispatch();
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Another Pending List" }).to_string()).dispatch();
+        let r3 = client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Completed Task List" }).to_string()).dispatch();
         let item3_id = r3.into_json::<TodoItem>().unwrap().id;
-        client.put(format!("/api/todos/{}/complete", item3_id)).dispatch();
+        client.put(format!("/api/todos/{}/complete", item3_id)).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).dispatch();
 
-        let response_true = client.get("/api/todos?completed=true").dispatch();
+        // List completed todos
+        let response_true = client.get("/api/todos?completed=true")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_true.status(), Status::Ok);
         let items_true = response_true.into_json::<Vec<TodoItem>>().unwrap();
-        assert_eq!(items_true.len(), 1); // This might fail if other tests left completed items for GLOBAL_USER_ID
+        assert_eq!(items_true.len(), 1);
         for item in &items_true {
             assert!(item.completed);
-            assert_eq!(item.user_id.0, expected_user_uuid);
+            assert_eq!(item.user_id, user_id);
         }
-        if !items_true.is_empty() { // to prevent panic on items_true[0] if empty
+        if !items_true.is_empty() {
              assert_eq!(items_true[0].description, "Completed Task List");
         }
 
-
-        let response_false = client.get("/api/todos?completed=false").dispatch();
+        // List pending todos
+        let response_false = client.get("/api/todos?completed=false")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_false.status(), Status::Ok);
         let items_false = response_false.into_json::<Vec<TodoItem>>().unwrap();
-        assert_eq!(items_false.len(), 2); // Similar to above, this assumes a clean slate for these 2 items.
+        assert_eq!(items_false.len(), 2);
         for item in items_false {
             assert!(!item.completed);
-            assert_eq!(item.user_id.0, expected_user_uuid);
+            assert_eq!(item.user_id, user_id);
         }
 
-        let response_all = client.get("/api/todos").dispatch();
+        // List all todos for the user
+        let response_all = client.get("/api/todos")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_all.status(), Status::Ok);
         let items_all = response_all.into_json::<Vec<TodoItem>>().unwrap();
-        assert_eq!(items_all.len(), 3); // Assumes only the 3 items from this test exist for GLOBAL_USER_ID
+        assert_eq!(items_all.len(), 3);
         for item in items_all {
-            assert_eq!(item.user_id.0, expected_user_uuid);
+            assert_eq!(item.user_id, user_id);
         }
     }
 
     #[test]
     fn test_get_todos_count() {
         let client = test_client();
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
+        let username = format!("testuser_count_todos_{}", Uuid::new_v4());
+        let password = "password123";
 
-        // To make this test more robust, we count before and after adding specific to this test.
-        let initial_count = client.get("/api/todos/count").dispatch().into_json::<usize>().unwrap_or(0);
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let _user_id = user_info.id; // Corrected: _user_id
 
-        let r1 = client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Count Item 1" }).to_string()).dispatch();
-        let item1 = r1.into_json::<TodoItem>().unwrap();
-        assert_eq!(item1.user_id.0, expected_user_uuid);
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
 
-        let r2 = client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": "Count Item 2" }).to_string()).dispatch();
-        let item2 = r2.into_json::<TodoItem>().unwrap();
-        assert_eq!(item2.user_id.0, expected_user_uuid);
+        // Add todo items
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Count Item 1" }).to_string()).dispatch();
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Count Item 2" }).to_string()).dispatch();
 
-
-        let response_after_add = client.get("/api/todos/count").dispatch();
+        // Get todos count
+        let response_after_add = client.get("/api/todos/count")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_after_add.status(), Status::Ok);
-        assert_eq!(response_after_add.into_json::<usize>().unwrap(), initial_count + 2);
+        assert_eq!(response_after_add.into_json::<usize>().unwrap(), 2); // Expect 2 items for this user
     }
 
     #[test]
     fn test_get_todos_count_by_status() {
         let client = test_client();
-        let expected_user_uuid = Uuid::parse_str(EXPECTED_GLOBAL_USER_UUID_STR).unwrap();
+        let username = format!("testuser_count_status_{}", Uuid::new_v4());
+        let password = "password123";
 
-        // It's hard to isolate counts with a GLOBAL_USER_ID without a reset mechanism.
-        // This test will assume it can add items and they'll be counted.
-        // Consider running tests serially or clearing data if this becomes flaky.
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+        let user_info = reg_response.into_json::<User>().unwrap();
+        let _user_id = user_info.id; // Corrected: _user_id
 
-        let desc_p1 = format!("Count Pending Status {}", Uuid::new_v4());
-        let desc_p2 = format!("Count Pending Status {}", Uuid::new_v4());
-        let desc_c1 = format!("Count Completed Status {}", Uuid::new_v4());
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
 
-        client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": desc_p1 }).to_string()).dispatch();
-        client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": desc_p2 }).to_string()).dispatch();
-        let r3 = client.post("/api/todos").header(ContentType::JSON).body(json!({ "description": desc_c1 }).to_string()).dispatch();
+        // Add todo items
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Count Pending Status 1" }).to_string()).dispatch();
+        client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Count Pending Status 2" }).to_string()).dispatch();
+        let r3 = client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Count Completed Status 1" }).to_string()).dispatch();
         let item3_id = r3.into_json::<TodoItem>().unwrap().id;
-        client.put(format!("/api/todos/{}/complete", item3_id)).dispatch();
+        client.put(format!("/api/todos/{}/complete", item3_id)).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).dispatch();
 
-        // Re-fetch all todos for GLOBAL_USER_ID to determine current counts accurately
-        let all_todos_resp = client.get("/api/todos").dispatch();
-        assert_eq!(all_todos_resp.status(), Status::Ok);
-        let all_todos = all_todos_resp.into_json::<Vec<TodoItem>>().unwrap();
-
-        let current_completed_count = all_todos.iter().filter(|item| item.completed && item.user_id.0 == expected_user_uuid).count();
-        let current_pending_count = all_todos.iter().filter(|item| !item.completed && item.user_id.0 == expected_user_uuid).count();
-
-
-        let response_true = client.get("/api/todos/count?completed=true").dispatch();
+        // Get count of completed todos
+        let response_true = client.get("/api/todos/count?completed=true")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_true.status(), Status::Ok);
-        assert_eq!(response_true.into_json::<usize>().unwrap(), current_completed_count, "Completed count mismatch");
+        assert_eq!(response_true.into_json::<usize>().unwrap(), 1, "Completed count mismatch");
 
-        let response_false = client.get("/api/todos/count?completed=false").dispatch();
+        // Get count of pending todos
+        let response_false = client.get("/api/todos/count?completed=false")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
         assert_eq!(response_false.status(), Status::Ok);
-        assert_eq!(response_false.into_json::<usize>().unwrap(), current_pending_count, "Pending count mismatch");
+        assert_eq!(response_false.into_json::<usize>().unwrap(), 2, "Pending count mismatch");
+    }
+
+    // --- Logout Test ---
+
+    #[test]
+    fn test_logout_and_attempt_access() {
+        let client = test_client();
+        let username = format!("testuser_logout_{}", Uuid::new_v4());
+        let password = "password123";
+
+        // Register user
+        let reg_response = client.post("/auth/register")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
+
+        // Login user
+        let login_response = client.post("/auth/login")
+            .header(ContentType::JSON)
+            .body(json!({ "username": username, "password": password }).to_string())
+            .dispatch();
+        assert_eq!(login_response.status(), Status::Ok, "Login failed");
+        let login_info = login_response.into_json::<LoginResponse>().unwrap();
+        let token = login_info.session_token;
+
+        // Logout
+        let logout_response = client.post("/auth/logout")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
+        assert_eq!(logout_response.status(), Status::NoContent, "Logout request failed");
+
+        // Attempt to use the token again
+        let subsequent_access_response = client.get("/api/todos")
+            .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
+            .dispatch();
+        assert_eq!(subsequent_access_response.status(), Status::Unauthorized, "Access after logout did not fail as expected");
+
+        // Verify error message for invalid token (as it's removed from session store)
+        let body = subsequent_access_response.into_string().unwrap();
+        assert!(body.contains("invalid_token"), "Error message for invalid token not found after logout. Body: {}", body);
     }
 }

@@ -1,6 +1,5 @@
 extern crate rocket; // Removed #[macro_use]
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy; // Added for GLOBAL_USER_ID
 use dashmap::DashMap;
 use rocket::{get, post, put, routes, State, catch, catchers}; // Added catch, catchers. State is already here.
 use rocket::fs::{FileServer, relative}; // Removed NamedFile
@@ -22,8 +21,7 @@ use rocket::request::{FromRequest, Outcome, Request}; // Added for Authenticated
 // UserId struct is defined below.
 // Uuid is imported on line 12.
 
-const GLOBAL_USER_UUID_STR: &str = "018f9db0-0c9f-7008-9089-47110058134A";
-static GLOBAL_USER_ID: Lazy<UserId> = Lazy::new(|| UserId(Uuid::parse_str(GLOBAL_USER_UUID_STR).expect("Failed to parse GLOBAL_USER_UUID_STR")));
+const SESSION_DURATION_SECONDS: i64 = 3600; // 1 hour
 
 // Newtype wrapper for uuid::Uuid
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,7 +166,7 @@ pub struct TodoItemDescription {
 
 // Renaming TodoStorage to TodoStore for consistency and defining TodoApp
 pub type TodoStore = RwLock<DashMap<AppUuid, TodoItem>>; // Use AppUuid as key
-pub type SessionStore = DashMap<String, UserId>; // SessionToken (String) -> UserId
+pub type SessionStore = DashMap<String, (UserId, DateTime<Utc>)>; // SessionToken (String) -> (UserId, CreationTime)
 
 pub struct TodoApp {
     pub todos: TodoStore,
@@ -186,6 +184,7 @@ pub struct AuthenticatedUser(pub UserId);
 pub enum AuthError {
     MissingOrMalformedHeader,
     InvalidToken,
+    TokenExpired, // Added for expired tokens
     NoSessionState, // Added for state issues
 }
 
@@ -217,13 +216,22 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
 
                 // Look up token in SessionStore
                 match app_state.sessions.get(token) {
-                    Some(user_id_ref) => {
-                        let user_id = *user_id_ref.value();
-                        Outcome::Success(AuthenticatedUser(user_id))
+                    Some(session_data_ref) => {
+                        let (user_id, creation_time) = *session_data_ref.value();
+                        if Utc::now() > creation_time + chrono::Duration::seconds(SESSION_DURATION_SECONDS) {
+                            // Token expired
+                            app_state.sessions.remove(token); // Remove expired token
+                            req.local_cache(|| Some(AuthError::TokenExpired));
+                            Outcome::Forward(rocket::http::Status::Unauthorized)
+                        } else {
+                            // Token valid
+                            Outcome::Success(AuthenticatedUser(user_id))
+                        }
                     }
                     None => {
+                        // Token not found
                         req.local_cache(|| Some(AuthError::InvalidToken));
-                        Outcome::Forward(rocket::http::Status::Unauthorized) // Token not found
+                        Outcome::Forward(rocket::http::Status::Unauthorized)
                     }
                 }
             }
@@ -432,7 +440,8 @@ pub fn login(login_data: Json<UserLogin<'_>>, app_state: &State<TodoApp>) -> Res
                 Ok(true) => {
                     // Password is correct, create a session token
                     let session_token = Uuid::new_v4().to_string();
-                    app_state.sessions.insert(session_token.clone(), user.id);
+                    let creation_time = Utc::now();
+                    app_state.sessions.insert(session_token.clone(), (user.id, creation_time));
 
                     let response = LoginResponse {
                         session_token,
@@ -480,15 +489,9 @@ impl<'r> FromRequest<'r> for BearerToken {
 }
 
 #[post("/logout")]
-async fn logout_user(app_state: &State<TodoApp>, token_guard: Option<BearerToken>) -> Status {
-    if let Some(bearer_token) = token_guard {
-        // A Bearer token was provided in the header
-        if !bearer_token.0.is_empty() { // Should be guaranteed by BearerToken guard if it's Some
-            app_state.sessions.remove(&bearer_token.0);
-        }
-    }
-    // Always return NoContent for logout, regardless of whether a token was provided or found.
-    // This simplifies client-side logic and ensures the session is treated as terminated.
+async fn logout_user(app_state: &State<TodoApp>, token_guard: BearerToken) -> Status {
+    // If the BearerToken guard passes, token_guard.0 will be the non-empty token string.
+    app_state.sessions.remove(&token_guard.0);
     Status::NoContent
 }
 
@@ -510,8 +513,9 @@ fn unauthorized_catcher(_status: Status, req: &Request<'_>) -> Json<ErrorRespons
 
     let (error_code, message) = match req.local_cache(|| None as Option<AuthError>) {
         Some(AuthError::MissingOrMalformedHeader) => ("missing_or_malformed_header".to_string(), "Authorization header is missing or malformed.".to_string()),
-        Some(AuthError::InvalidToken) => ("invalid_token".to_string(), "Session token is invalid or expired.".to_string()),
-        _ => (default_error_code, default_message), // Includes NoSessionState if it somehow led to 401, or if cache is empty
+        Some(AuthError::InvalidToken) => ("invalid_token".to_string(), "Session token is invalid, not found, or has been revoked.".to_string()),
+        Some(AuthError::TokenExpired) => ("token_expired".to_string(), "Session token has expired.".to_string()),
+        _ => (default_error_code, default_message), // Includes NoSessionState or if cache is empty
     };
 
     Json(ErrorResponse { error: error_code, message })
