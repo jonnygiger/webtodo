@@ -1,7 +1,8 @@
 # todo_backend/Dockerfile
 
 # --- Builder Stage ---
-FROM rust:1.75.0 AS builder
+FROM rust:latest AS builder
+RUN rustup update stable
 
 # Install diesel_cli and system dependencies for compiling pq-sys
 RUN apt-get update && apt-get install -y libpq-dev     && rm -rf /var/lib/apt/lists/*
@@ -18,6 +19,9 @@ COPY todo_backend/diesel.toml ./todo_backend/diesel.toml
 # Create a dummy .env file for diesel schema generation if needed during build
 # This won't be used at runtime if DATABASE_URL is provided by docker-compose
 RUN echo "DATABASE_URL=postgres://dummyuser:dummypass@localhost:5432/dummy_db" > ./todo_backend/.env
+
+# Update dependencies
+RUN cd todo_backend && cargo update
 
 # Build the application
 # Separate target directory for dependencies caching
