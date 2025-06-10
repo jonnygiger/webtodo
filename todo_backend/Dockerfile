@@ -5,7 +5,7 @@ FROM rust:1.75.0 AS builder
 
 # Install diesel_cli and system dependencies for compiling pq-sys
 RUN apt-get update && apt-get install -y libpq-dev     && rm -rf /var/lib/apt/lists/*
-RUN cargo install diesel_cli --no-default-features --features postgres
+RUN cargo install diesel_cli --version 2.1.1 --no-default-features --features postgres
 
 WORKDIR /usr/src/app
 
