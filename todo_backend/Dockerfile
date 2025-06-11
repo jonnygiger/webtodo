@@ -1,7 +1,7 @@
 # todo_backend/Dockerfile
 
 # --- Builder Stage ---
-FROM rust:1.77-bullseye AS builder
+FROM rust:1.82-bullseye AS builder
 RUN rustup update stable
 
 # Install diesel_cli and system dependencies for compiling pq-sys
