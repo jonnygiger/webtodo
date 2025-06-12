@@ -5,7 +5,7 @@ FROM rust:1.82-bullseye AS builder
 RUN rustup update stable
 
 # Install diesel_cli and system dependencies for compiling pq-sys
-RUN apt-get update && apt-get install -y libpq-dev     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get -y upgrade && apt-get install -y libpq-dev     && rm -rf /var/lib/apt/lists/*
 RUN cargo install diesel_cli --version 2.1.1 --no-default-features --features postgres
 
 WORKDIR /usr/src/app
