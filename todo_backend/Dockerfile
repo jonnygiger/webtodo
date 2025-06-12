@@ -43,6 +43,8 @@ RUN apt-get update && apt-get install -y libpq5 ca-certificates curl     && rm -
 COPY --from=builder /usr/local/bin/todo_backend_server /usr/local/bin/todo_backend_server
 COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 COPY todo_backend/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --from=builder /usr/src/app/todo_backend/migrations /app/migrations/
+COPY --from=builder /usr/src/app/todo_backend/diesel.toml /app/diesel.toml
 
 # Copy static files if your application serves them
 # COPY todo_backend/static /app/static
