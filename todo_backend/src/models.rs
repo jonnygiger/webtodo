@@ -25,7 +25,7 @@ pub struct NewUser<'a> {
 }
 
 // For returning user info without password hash
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct UserInfo {
     pub id: Uuid,

@@ -15,6 +15,7 @@ use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::{Build, Rocket, State}; // Import State
 use uuid::Uuid;
+use dotenvy;
 
 // Re-export AppUuid if it's used elsewhere, or remove if not needed
 // For simplicity, assuming Uuid directly from the uuid crate is fine.
@@ -114,7 +115,7 @@ pub struct AuthRequest {
     password: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct LoginResponse {
     pub session_token: String,
@@ -376,6 +377,7 @@ async fn get_todos_count(
 
 // --- Rocket instance setup ---
 pub fn rocket_instance() -> Rocket<Build> {
+    dotenvy::dotenv().ok(); // Load .env file
     rocket::build()
         .attach(db::stage()) // Attach the DB pool fairing
         .mount(

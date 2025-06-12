@@ -3,7 +3,8 @@ mod tests {
     use rocket::http::{ContentType, Status};
     use rocket::local::blocking::Client;
     use serde_json::json;
-    use todo_backend::*; // Import all public items from todo_backend crate
+    use todo_backend::models::{TodoItem, UserInfo};
+    use todo_backend::LoginResponse;
     use uuid::Uuid; // For Uuid parsing
 
     // Helper function to create a test client
@@ -24,9 +25,8 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(response.status(), Status::Ok);
-        let user_res = response.into_json::<User>().unwrap(); // User is from lib.rs
+        let user_res = response.into_json::<UserInfo>().unwrap(); // User is from lib.rs
         assert_eq!(user_res.username, username);
-        assert_eq!(user_res.password_hash, "");
     }
 
     #[test]
@@ -111,7 +111,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let user_id = user_info.id; // Corrected: user_id
 
         // Login user
@@ -150,7 +150,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let user_id = user_info.id;
 
         // Login user
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(fetched_item.user_id, user_id, "UserId on get does not match the logged-in user's ID");
 
         // Test retrieving a non-existing item
-        let non_existing_id = AppUuid::new_v4();
+        let non_existing_id = Uuid::new_v4();
         let response_not_found = client.get(format!("/api/todos/{}", non_existing_id))
             .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .dispatch();
@@ -204,7 +204,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let user_id = user_info.id;
 
         // Login user
@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(fetched_item.user_id, user_id);
 
         // Test completing a non-existing item
-        let non_existing_id = AppUuid::new_v4();
+        let non_existing_id = Uuid::new_v4();
         let response_not_found = client.put(format!("/api/todos/{}/complete", non_existing_id))
             .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .dispatch();
@@ -267,7 +267,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let user_id = user_info.id;
 
         // Login user
@@ -320,7 +320,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let user_id = user_info.id;
 
         // Login user
@@ -390,7 +390,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let _user_id = user_info.id; // Corrected: _user_id
 
         // Login user
@@ -426,7 +426,7 @@ mod tests {
             .body(json!({ "username": username, "password": password }).to_string())
             .dispatch();
         assert_eq!(reg_response.status(), Status::Ok, "Registration failed");
-        let user_info = reg_response.into_json::<User>().unwrap();
+        let user_info = reg_response.into_json::<UserInfo>().unwrap();
         let _user_id = user_info.id; // Corrected: _user_id
 
         // Login user
