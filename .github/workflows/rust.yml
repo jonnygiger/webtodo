@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  NETWORK_NAME: todo-network
+  COMPOSE_PROJECT_NAME: todo_project # Used by docker-compose to prefix network names
 
 jobs:
   build_and_test_dockerized:
@@ -21,37 +21,32 @@ jobs:
         docker --version
         docker compose version
 
-    - name: Create custom Docker network
-      run: docker network create $NETWORK_NAME
-
     - name: Build builder image
+      # This image is used by the test_runner service defined in docker-compose.yml (in the next step)
+      # and also by the app service.
       run: docker build --target builder -t todo-builder -f todo_backend/Dockerfile .
 
     - name: Start db service
-      # We only need the db service for the test phase.
-      # It will be connected to the custom network so the test container can reach it.
-      run: |
-        docker compose up -d db
-        docker network connect $NETWORK_NAME $(docker compose ps -q db)
+      # db service now uses the 'todo_network' defined in docker-compose.yml
+      run: docker compose up -d db
 
     - name: Wait for db service to be healthy
       run: |
         echo "Waiting for db service to become healthy..."
-        TIMEOUT=120 # 2 minutes timeout
-        INTERVAL=5 # Check every 5 seconds
+        TIMEOUT=120
+        INTERVAL=5
         ELAPSED=0
         while true; do
-          DB_STATUS=$(docker compose ps db | grep 'healthy' | wc -l || true)
-
+          # Ensure using COMPOSE_PROJECT_NAME for ps command if not globally set for all compose commands
+          DB_STATUS=$(docker compose -p ${COMPOSE_PROJECT_NAME} ps db | grep 'healthy' | wc -l || true)
           if [ "$DB_STATUS" -ge 1 ]; then
             echo "Database service is healthy."
             break
           fi
-
           if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
             echo "Timeout waiting for db service to become healthy."
             echo "--- DB Logs ---"
-            docker compose logs db
+            docker compose -p ${COMPOSE_PROJECT_NAME} logs db
             exit 1
           fi
           sleep $INTERVAL
@@ -59,19 +54,10 @@ jobs:
           echo "Still waiting for db... ($ELAPSED/$TIMEOUT seconds)"
         done
 
-    - name: Run tests in builder container
+    - name: Run tests using test_runner service
       run: |
-        echo "Running tests..."
-        # Mount the current directory to /usr/src/app in the container
-        # The builder Dockerfile has WORKDIR /usr/src/app
-        # DATABASE_URL uses 'db' as hostname, which resolves on the custom network
-        docker run --rm --network $NETWORK_NAME \
-          -v $(pwd):/usr/src/app \
-          -e DATABASE_URL="postgres://myuser:mypassword@db:5432/todo_db" \
-          -e RUST_LOG=debug \
-          -w /usr/src/app/todo_backend \
-          todo-builder \
-          cargo test -- --test-threads=1
+        echo "Running tests via docker compose..."
+        docker compose -p ${COMPOSE_PROJECT_NAME} run --rm test_runner
 
     - name: Build and start app service
       run: |
@@ -86,21 +72,19 @@ jobs:
       # This is a new step to ensure the final app is healthy before finishing.
       run: |
         echo "Waiting for app service to become healthy..."
-        TIMEOUT=120 # 2 minutes timeout
-        INTERVAL=5 # Check every 5 seconds
+        TIMEOUT=120
+        INTERVAL=5
         ELAPSED=0
         while true; do
-          APP_STATUS=$(docker compose ps app | grep 'healthy' | wc -l || true)
-
+          APP_STATUS=$(docker compose -p ${COMPOSE_PROJECT_NAME} ps app | grep 'healthy' | wc -l || true)
           if [ "$APP_STATUS" -ge 1 ]; then
             echo "Application service is healthy."
             break
           fi
-
           if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
             echo "Timeout waiting for app service to become healthy."
             echo "--- App Logs ---"
-            docker compose logs app
+            docker compose -p ${COMPOSE_PROJECT_NAME} logs app
             exit 1
           fi
           sleep $INTERVAL
@@ -108,8 +92,7 @@ jobs:
           echo "Still waiting for app... ($ELAPSED/$TIMEOUT seconds)"
         done
 
-    - name: Stop services and remove network
-      if: always() # Ensure cleanup happens even if previous steps fail
+    - name: Stop services
+      if: always()
       run: |
         docker compose down -v
-        docker network rm $NETWORK_NAME || true # Allow failure if network was already removed or never created

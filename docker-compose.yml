@@ -1,15 +1,17 @@
 # docker-compose.yml
 
+version: '3.8'
+
 services:
   db:
     image: postgres:15-alpine
     container_name: todo_postgres_db
     environment:
-      POSTGRES_USER: myuser        # Changed from 'user' to 'myuser'
-      POSTGRES_PASSWORD: mypassword  # Changed from 'password' to 'mypassword'
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: todo_db
     ports:
-      - "5432:5432" # Expose port for local access if needed, not strictly necessary for inter-container communication
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,6 +19,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - todo_network
 
   app:
     build:
@@ -25,25 +29,40 @@ services:
     container_name: todo_rust_app
     depends_on:
       db:
-        condition: service_healthy # Wait for db to be healthy
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
-      ROCKET_ADDRESS: "0.0.0.0" # Important for Rocket to bind to all interfaces in Docker
-      DATABASE_URL: "postgres://myuser:mypassword@db:5432/todo_db" # Connect to 'db' service on port 5432
-      # ROCKET_LOG_LEVEL: "debug" # Optional: for more verbose logging
+      ROCKET_ADDRESS: "0.0.0.0"
+      DATABASE_URL: "postgres://myuser:mypassword@db:5432/todo_db"
     healthcheck:
       test: ["CMD-SHELL", "curl http://localhost:8000/api/todos && exit 0 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s # Give the app some time to start before first health check
-    # Add a command to run migrations before starting the app server
-    # This requires diesel_cli to be available in the final image, or a separate migration script.
-    # For simplicity, we'll assume the app runs migrations on startup if configured to do so.
-    # If not, migrations need to be run manually or via an entrypoint script.
-    # The current lib.rs does not automatically run migrations, so this would be a manual step
-    # or require adding migration running logic to main.rs or db.rs.
+      start_period: 10s
+    networks:
+      - todo_network
+
+  test_runner: # New service
+    image: todo-builder # This image must be built before running this service
+    container_name: todo_test_runner
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://myuser:mypassword@db:5432/todo_db"
+      RUST_LOG: debug
+    working_dir: /usr/src/app/todo_backend
+    volumes:
+      - .:/usr/src/app
+    command: cargo test -- --test-threads=1
+    networks:
+      - todo_network
 
 volumes:
-  postgres_data: # Persists database data across container restarts
+  postgres_data:
+
+networks:
+  todo_network:
+    driver: bridge
