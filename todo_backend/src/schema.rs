@@ -14,7 +14,9 @@ diesel::table! {
 diesel::table! {
     users (id) {
         id -> Uuid,
+        #[max_length = 255]
         username -> Varchar,
+        #[max_length = 255]
         password_hash -> Varchar,
         created_at -> Timestamp,
         updated_at -> Timestamp,
