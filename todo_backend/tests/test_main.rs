@@ -285,7 +285,7 @@ mod tests {
         client.post("/api/todos").header(ContentType::JSON).header(rocket::http::Header::new("Authorization", format!("Bearer {}", token))).body(json!({ "description": "Build an API for this user" }).to_string()).dispatch();
 
         // Search todo items
-        let response = client.get("/api/todos/search?description=learn")
+        let response = client.get("/api/todos?description=learn")
             .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .dispatch();
         assert_eq!(response.status(), Status::Ok);
@@ -297,7 +297,7 @@ mod tests {
         }
 
         // Search all todo items for the user
-        let response_all = client.get("/api/todos/search")
+        let response_all = client.get("/api/todos")
             .header(rocket::http::Header::new("Authorization", format!("Bearer {}", token)))
             .dispatch();
         assert_eq!(response_all.status(), Status::Ok);

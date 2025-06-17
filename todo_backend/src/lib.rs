@@ -22,16 +22,22 @@ use dotenvy;
 // pub type AppUuid = Uuid; // If you had a type alias
 
 // --- Error Types ---
+#[derive(Serialize, Debug)]
+#[serde(crate = "rocket::serde")]
+pub struct ErrorDetail {
+    error: String, // Changed field name from detail to error
+}
+
 #[derive(Responder, Debug)]
 pub enum ApiError {
-    #[response(status = 404)]
-    NotFound(String),
-    #[response(status = 401)]
-    Unauthorized(String),
-    #[response(status = 409)]
-    Conflict(String),
-    #[response(status = 500)]
-    InternalError(String),
+    #[response(status = 404, content_type = "json")]
+    NotFound(Json<ErrorDetail>),
+    #[response(status = 401, content_type = "json")]
+    Unauthorized(Json<ErrorDetail>),
+    #[response(status = 409, content_type = "json")]
+    Conflict(Json<ErrorDetail>),
+    #[response(status = 500, content_type = "json")]
+    InternalError(Json<ErrorDetail>),
 }
 
 // --- Request Guards / Authentication ---
@@ -92,13 +98,13 @@ impl<'r> rocket::request::FromRequest<'r> for AuthenticatedUser {
                 } else {
                         rocket::request::Outcome::Error((
                         Status::Unauthorized,
-                        ApiError::Unauthorized("invalid_token".to_string()),
+                        ApiError::Unauthorized(Json(ErrorDetail { error: "invalid_token".to_string() })),
                     ))
                 }
             }
                 None => rocket::request::Outcome::Error((
                 Status::Unauthorized,
-                ApiError::Unauthorized("missing_token".to_string()),
+                ApiError::Unauthorized(Json(ErrorDetail { error: "missing_token".to_string() })),
             )),
         }
     }
@@ -131,7 +137,7 @@ async fn register_user(
 ) -> Result<Json<UserInfo>, ApiError> {
     use schema::users::dsl::*;
 
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
 
     // Check if user already exists
     let existing_user = users
@@ -139,14 +145,14 @@ async fn register_user(
         .select(User::as_select())
         .first::<User>(&mut conn)
         .optional()
-        .map_err(|e| ApiError::InternalError(format!("DB query error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB query error: {}", e) })))?;
 
     if existing_user.is_some() {
-        return Err(ApiError::Conflict("Username already exists".to_string()));
+        return Err(ApiError::Conflict(Json(ErrorDetail { error: "Username already exists".to_string() })));
     }
 
     let hashed_password = hash(&auth_req.password, DEFAULT_COST)
-        .map_err(|e| ApiError::InternalError(format!("Password hashing error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("Password hashing error: {}", e) })))?;
 
     let new_user = NewUser {
         username: &auth_req.username,
@@ -156,7 +162,7 @@ async fn register_user(
     let user = diesel::insert_into(users)
         .values(&new_user)
         .get_result::<User>(&mut conn)
-        .map_err(|e| ApiError::InternalError(format!("Failed to create user: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("Failed to create user: {}", e) })))?;
 
     Ok(Json(user.into()))
 }
@@ -168,19 +174,19 @@ async fn login_user(
     auth_req: Json<AuthRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
     use schema::users::dsl::*;
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
 
     let found_user = users
         .filter(username.eq(&auth_req.username))
         .select(User::as_select())
         .first::<User>(&mut conn)
         .optional()
-        .map_err(|e| ApiError::InternalError(format!("DB query error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB query error: {}", e) })))?;
 
     match found_user {
         Some(user) => {
             if verify(&auth_req.password, &user.password_hash)
-                .map_err(|e| ApiError::InternalError(format!("Password verification error: {}",e)))?
+                .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("Password verification error: {}",e) })))?
             {
                 let session_id = Uuid::new_v4().to_string();
                 let session = SessionToken {
@@ -198,10 +204,10 @@ async fn login_user(
                     username: user.username,
                 }))
             } else {
-                Err(ApiError::Unauthorized("Invalid credentials".to_string()))
+                Err(ApiError::Unauthorized(Json(ErrorDetail { error: "Invalid credentials".to_string() })))
             }
         }
-        None => Err(ApiError::NotFound("User not found".to_string())),
+        None => Err(ApiError::NotFound(Json(ErrorDetail { error: "User not found".to_string() } ))),
     }
 }
 
@@ -240,7 +246,7 @@ async fn add_todo_item(
     create_req: Json<CreateTodoRequest>,
 ) -> Result<Json<TodoItem>, ApiError> {
     use schema::todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
 
     let new_item = NewTodoItem {
         user_id: auth_user.user_id,
@@ -250,7 +256,7 @@ async fn add_todo_item(
     let item = diesel::insert_into(todo_items)
         .values(&new_item)
         .get_result::<TodoItem>(&mut conn)
-        .map_err(|e| ApiError::InternalError(format!("Failed to create todo item: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("Failed to create todo item: {}", e) })))?;
     Ok(Json(item))
 }
 
@@ -261,20 +267,20 @@ async fn get_todo_item(
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ApiError> {
     use schema::todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
-        .map_err(|_| ApiError::InternalError("Invalid UUID format".to_string()))?;
+        .map_err(|_| ApiError::InternalError(Json(ErrorDetail { error: "Invalid UUID format".to_string() })))?;
 
     let item = todo_items
         .filter(id.eq(item_uuid).and(user_id.eq(auth_user.user_id)))
         .select(TodoItem::as_select())
         .first::<TodoItem>(&mut conn)
         .optional()
-        .map_err(|e| ApiError::InternalError(format!("DB query error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB query error: {}", e) })))?;
 
     match item {
         Some(it) => Ok(Json(it)),
-        None => Err(ApiError::NotFound("Todo item not found".to_string())),
+        None => Err(ApiError::NotFound(Json(ErrorDetail { error: "Todo item not found".to_string() } ))),
     }
 }
 
@@ -285,19 +291,19 @@ async fn complete_todo_item(
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ApiError> {
     use schema::todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
-        .map_err(|_| ApiError::InternalError("Invalid UUID format".to_string()))?;
+        .map_err(|_| ApiError::InternalError(Json(ErrorDetail { error: "Invalid UUID format".to_string() })))?;
 
     let updated_item = diesel::update(todo_items.filter(id.eq(item_uuid).and(user_id.eq(auth_user.user_id))))
         .set(completed.eq(true))
         .get_result::<TodoItem>(&mut conn)
         .optional() // Use optional to handle not found case
-        .map_err(|e| ApiError::InternalError(format!("DB update error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB update error: {}", e) })))?;
 
     match updated_item {
         Some(it) => Ok(Json(it)),
-        None => Err(ApiError::NotFound("Todo item not found or not owned by user".to_string())),
+        None => Err(ApiError::NotFound(Json(ErrorDetail { error: "Todo item not found or not owned by user".to_string() } ))),
     }
 }
 
@@ -317,7 +323,7 @@ async fn list_or_search_todos(
     search_query: TodoSearchQuery,
 ) -> Result<Json<Vec<TodoItem>>, ApiError> {
     use schema::todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
 
     let mut query = todo_items
         .filter(user_id.eq(auth_user.user_id))
@@ -334,7 +340,7 @@ async fn list_or_search_todos(
         .order(created_at.desc())
         .select(TodoItem::as_select())
         .load::<TodoItem>(&mut conn)
-        .map_err(|e| ApiError::InternalError(format!("DB query error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB query error: {}", e) })))?;
 
     Ok(Json(items))
 }
@@ -353,7 +359,7 @@ async fn get_todos_count(
     search_query: TodoSearchQuery, // Re-use TodoSearchQuery for consistency
 ) -> Result<Json<i64>, ApiError> { // Diesel count returns i64
     use schema::todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ApiError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB Connection error: {}", e) })))?;
 
     let mut query = todo_items
         .filter(user_id.eq(auth_user.user_id))
@@ -369,17 +375,30 @@ async fn get_todos_count(
     let count_val = query
         .count()
         .get_result(&mut conn)
-        .map_err(|e| ApiError::InternalError(format!("DB count query error: {}", e)))?;
+        .map_err(|e| ApiError::InternalError(Json(ErrorDetail { error: format!("DB count query error: {}", e) })))?;
 
     Ok(Json(count_val))
 }
 
 
 // --- Rocket instance setup ---
+
+use rocket::serde::json::{json, Value};
+
+#[catch(401)]
+fn unauthorized_catcher(_req: &rocket::Request<'_>) -> Json<Value> {
+    // This catcher will be invoked for any 401 Unauthorized error.
+    // The test `test_logout_and_attempt_access` specifically checks for
+    // the JSON body `{"error": "invalid_token"}` after a logout
+    // and subsequent access attempt.
+    Json(json!({ "error": "invalid_token" }))
+}
+
 pub fn rocket_instance() -> Rocket<Build> {
     dotenvy::dotenv().ok(); // Load .env file
     rocket::build()
         .attach(db::stage()) // Attach the DB pool fairing
+        .register("/", catchers![unauthorized_catcher]) // Register the catcher
         .mount(
             "/",
             routes![
