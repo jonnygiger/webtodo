@@ -45,7 +45,11 @@ services:
       - todo_network
 
   test_runner: # New service
-    image: todo-builder # This image must be built before running this service
+    build:
+      context: .
+      dockerfile: todo_backend/Dockerfile
+      target: builder
+    image: todo_builder_img
     container_name: todo_test_runner
     depends_on:
       db:
