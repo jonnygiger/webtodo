@@ -9,6 +9,7 @@ pub mod db; // Our new db module
 use bcrypt::{hash, verify, DEFAULT_COST};
 use db::PgPool;
 use diesel::prelude::*;
+use rocket::fs::FileServer;
 use models::*;
 use rocket::http::{CookieJar, Status};
 use rocket::serde::json::Json;
@@ -394,11 +395,18 @@ fn unauthorized_catcher(_req: &rocket::Request<'_>) -> Json<Value> {
     Json(json!({ "error": "invalid_token" }))
 }
 
+#[catch(404)]
+fn not_found_catcher(_: &rocket::Request) -> rocket::response::content::RawHtml<String> {
+    rocket::response::content::RawHtml(format!(
+        "<p>Sorry, but the page you were looking for could not be found.</p>"
+    ))
+}
+
 pub fn rocket_instance() -> Rocket<Build> {
     dotenvy::dotenv().ok(); // Load .env file
     rocket::build()
         .attach(db::stage()) // Attach the DB pool fairing
-        .register("/", catchers![unauthorized_catcher]) // Register the catcher
+        .register("/", catchers![unauthorized_catcher, not_found_catcher]) // Register the catcher
         .mount(
             "/",
             routes![
@@ -415,7 +423,7 @@ pub fn rocket_instance() -> Rocket<Build> {
             ],
         )
         // Potentially add static file serving if it was part of the original app
-        // .mount("/", FileServer::from(relative!("static"))) // Example for Rocket 0.5
+        .mount("/", FileServer::from(relative!("static"))) // Example for Rocket 0.5
 }
 
 // Add any necessary `use` statements at the top of lib.rs for new modules like `schema` and `models`.
