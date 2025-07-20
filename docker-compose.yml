@@ -5,7 +5,6 @@ version: '3.8'
 services:
   db:
     image: postgres:15-alpine
-    container_name: todo_postgres_db
     environment:
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: mypassword
@@ -19,14 +18,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - todo_network
 
   app:
     build:
       context: .
       dockerfile: todo_backend/Dockerfile
-    container_name: todo_rust_app
     depends_on:
       db:
         condition: service_healthy
@@ -41,32 +37,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    networks:
-      - todo_network
-
-  test_runner: # New service
-    build:
-      context: .
-      dockerfile: todo_backend/Dockerfile
-      target: builder
-    image: todo_builder_img
-    container_name: todo_test_runner
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: "postgres://myuser:mypassword@db:5432/todo_db"
-      RUST_LOG: debug
-    working_dir: /usr/src/app/todo_backend
-    volumes:
-      - .:/usr/src/app
-    command: sh -c "diesel migration run && cargo test -- --test-threads=1"
-    networks:
-      - todo_network
 
 volumes:
   postgres_data:
-
-networks:
-  todo_network:
-    driver: bridge
