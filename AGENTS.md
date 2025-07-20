@@ -17,3 +17,11 @@ The route handlers have been refactored to use the new `services` module. This h
 ## 4. Improved Error Handling
 
 A new `ServiceError` enum has been introduced in the `services` module to handle business logic errors. An implementation of `From<ServiceError> for ApiError` has been provided to automatically convert service errors into API errors, which helps to reduce boilerplate and centralize error handling.
+
+## Error Handling
+
+The error handling mechanism has been improved by using the `thiserror` and `anyhow` crates. The `ServiceError` enum now uses `thiserror` to derive the `Error` trait, which allows it to be used with the `?` operator for more concise error handling. The `anyhow` crate is used to provide more context to errors, making them easier to debug.
+
+## Code Refactoring
+
+The `build_todo_query` function has been refactored into a private helper function `_build_todo_query` to encapsulate the query building logic. This change improves the code's readability and maintainability by separating the query building logic from the `list_or_search_todos` and `get_todos_count` functions.

@@ -16,22 +16,20 @@ pub fn register_user(
 ) -> Result<Json<UserInfo>, ServiceError> {
     use users::dsl::*;
 
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     // Check if user already exists
     let existing_user = users
         .filter(username.eq(&auth_req.username))
         .select(User::as_select())
         .first::<User>(&mut conn)
-        .optional()
-        .map_err(|e| ServiceError::InternalError(format!("DB query error: {}", e)))?;
+        .optional()?;
 
     if existing_user.is_some() {
         return Err(ServiceError::Conflict("Username already exists".to_string()));
     }
 
-    let hashed_password = hash(&auth_req.password, DEFAULT_COST)
-        .map_err(|e| ServiceError::InternalError(format!("Password hashing error: {}", e)))?;
+    let hashed_password = hash(&auth_req.password, DEFAULT_COST)?;
 
     let new_user = NewUser {
         username: &auth_req.username,
@@ -40,8 +38,7 @@ pub fn register_user(
 
     let user = diesel::insert_into(users)
         .values(&new_user)
-        .get_result::<User>(&mut conn)
-        .map_err(|e| ServiceError::InternalError(format!("Failed to create user: {}", e)))?;
+        .get_result::<User>(&mut conn)?;
 
     Ok(Json(user.into()))
 }
@@ -52,19 +49,17 @@ pub fn login_user(
     auth_req: Json<AuthRequest>,
 ) -> Result<Json<LoginResponse>, ServiceError> {
     use users::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     let found_user = users
         .filter(username.eq(&auth_req.username))
         .select(User::as_select())
         .first::<User>(&mut conn)
-        .optional()
-        .map_err(|e| ServiceError::InternalError(format!("DB query error: {}", e)))?;
+        .optional()?;
 
     match found_user {
         Some(user) => {
-            if verify(&auth_req.password, &user.password_hash)
-                .map_err(|e| ServiceError::InternalError(format!("Password verification error: {}",e)))?
+            if verify(&auth_req.password, &user.password_hash)?
             {
                 let new_session = NewSession {
                     user_id: user.id,
@@ -73,8 +68,7 @@ pub fn login_user(
 
                 let session = diesel::insert_into(sessions::table)
                     .values(&new_session)
-                    .get_result::<Session>(&mut conn)
-                    .map_err(|e| ServiceError::InternalError(format!("Failed to create session: {}", e)))?;
+                    .get_result::<Session>(&mut conn)?;
 
                 cookies.add(rocket::http::Cookie::new("session_token", session.id.to_string()));
 
@@ -100,13 +94,12 @@ pub fn logout_user(
     };
 
     let session_uuid = Uuid::parse_str(&session_token)
-        .map_err(|_| ServiceError::InternalError("Invalid session token".to_string()))?;
+        .map_err(|_| ServiceError::InvalidInput("Invalid session token".to_string()))?;
 
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     diesel::delete(sessions::table.filter(sessions::id.eq(session_uuid)))
-        .execute(&mut conn)
-        .map_err(|e| ServiceError::InternalError(format!("Failed to delete session: {}", e)))?;
+        .execute(&mut conn)?;
 
     cookies.remove(rocket::http::Cookie::named("session_token"));
 

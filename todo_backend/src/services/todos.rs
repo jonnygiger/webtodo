@@ -14,7 +14,7 @@ pub fn add_todo_item(
     create_req: Json<CreateTodoRequest>,
 ) -> Result<Json<TodoItem>, ServiceError> {
     use todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     let new_item = NewTodoItem {
         user_id: auth_user.user_id,
@@ -23,8 +23,7 @@ pub fn add_todo_item(
 
     let item = diesel::insert_into(todo_items)
         .values(&new_item)
-        .get_result::<TodoItem>(&mut conn)
-        .map_err(|e| ServiceError::InternalError(format!("Failed to create todo item: {}", e)))?;
+        .get_result::<TodoItem>(&mut conn)?;
     Ok(Json(item))
 }
 
@@ -34,16 +33,15 @@ pub fn get_todo_item(
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ServiceError> {
     use todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
-        .map_err(|_| ServiceError::InternalError("Invalid UUID format".to_string()))?;
+        .map_err(|_| ServiceError::InvalidInput("Invalid UUID format".to_string()))?;
 
     let item = todo_items
         .filter(id.eq(item_uuid).and(user_id.eq(auth_user.user_id)))
         .select(TodoItem::as_select())
         .first::<TodoItem>(&mut conn)
-        .optional()
-        .map_err(|e| ServiceError::InternalError(format!("DB query error: {}", e)))?;
+        .optional()?;
 
     match item {
         Some(it) => Ok(Json(it)),
@@ -57,15 +55,14 @@ pub fn complete_todo_item(
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ServiceError> {
     use todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
-        .map_err(|_| ServiceError::InternalError("Invalid UUID format".to_string()))?;
+        .map_err(|_| ServiceError::InvalidInput("Invalid UUID format".to_string()))?;
 
     let updated_item = diesel::update(todo_items.filter(id.eq(item_uuid).and(user_id.eq(auth_user.user_id))))
         .set(completed.eq(true))
         .get_result::<TodoItem>(&mut conn)
-        .optional() // Use optional to handle not found case
-        .map_err(|e| ServiceError::InternalError(format!("DB update error: {}", e)))?;
+        .optional()?;
 
     match updated_item {
         Some(it) => Ok(Json(it)),
@@ -73,7 +70,7 @@ pub fn complete_todo_item(
     }
 }
 
-fn build_todo_query(
+fn _build_todo_query(
     auth_user: &AuthenticatedUser,
     search_query: &TodoSearchQuery,
 ) -> diesel::query_builder::BoxedSelectStatement<
@@ -108,15 +105,14 @@ pub fn list_or_search_todos(
     search_query: TodoSearchQuery,
 ) -> Result<Json<Vec<TodoItem>>, ServiceError> {
     use todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
-    let query = build_todo_query(&auth_user, &search_query);
+    let query = _build_todo_query(&auth_user, &search_query);
 
     let items = query
         .order(created_at.desc())
         .select(TodoItem::as_select())
-        .load::<TodoItem>(&mut conn)
-        .map_err(|e| ServiceError::InternalError(format!("DB query error: {}", e)))?;
+        .load::<TodoItem>(&mut conn)?;
 
     Ok(Json(items))
 }
@@ -126,14 +122,13 @@ pub fn get_todos_count(
     auth_user: AuthenticatedUser,
     search_query: TodoSearchQuery,
 ) -> Result<Json<i64>, ServiceError> {
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
-    let query = build_todo_query(&auth_user, &search_query);
+    let query = _build_todo_query(&auth_user, &search_query);
 
     let count_val = query
         .count()
-        .get_result(&mut conn)
-        .map_err(|e| ServiceError::InternalError(format!("DB count query error: {}", e)))?;
+        .get_result(&mut conn)?;
 
     Ok(Json(count_val))
 }
@@ -144,15 +139,14 @@ pub fn delete_todo_item(
     item_id_str: String,
 ) -> Result<(), ServiceError> {
     use todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
-        .map_err(|_| ServiceError::InternalError("Invalid UUID format".to_string()))?;
+        .map_err(|_| ServiceError::InvalidInput("Invalid UUID format".to_string()))?;
 
     let target = todo_items.filter(id.eq(item_uuid).and(user_id.eq(auth_user.user_id)));
 
     let num_deleted = diesel::delete(target)
-        .execute(&mut conn)
-        .map_err(|e| ServiceError::InternalError(format!("DB delete error: {}", e)))?;
+        .execute(&mut conn)?;
 
     if num_deleted > 0 {
         Ok(())
