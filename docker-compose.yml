@@ -4,7 +4,7 @@ version: "3.8"
 services:
   db:
     container_name: todo_db
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: mypassword
@@ -40,7 +40,7 @@ services:
       start_period: 10s
 
   test_runner:
-    container_name: todo_test_runner
+    container_name: webtodo_test_runner_1
     build:
       context: .
       dockerfile: todo_backend/Dockerfile
