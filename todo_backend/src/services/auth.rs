@@ -14,7 +14,7 @@ pub fn register_user(
     pool: &State<PgPool>,
     auth_req: Json<AuthRequest>,
 ) -> Result<Json<UserInfo>, ServiceError> {
-    use users::dsl::*;
+    use crate::schema::users::dsl::*;
 
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
@@ -48,7 +48,7 @@ pub fn login_user(
     cookies: &rocket::http::CookieJar<'_>,
     auth_req: Json<AuthRequest>,
 ) -> Result<Json<LoginResponse>, ServiceError> {
-    use users::dsl::*;
+    use crate::schema::users::dsl::*;
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     let found_user = users
@@ -101,7 +101,7 @@ pub fn logout_user(
     diesel::delete(sessions::table.filter(sessions::id.eq(session_uuid)))
         .execute(&mut conn)?;
 
-    cookies.remove(rocket::http::Cookie::named("session_token"));
+    cookies.remove(rocket::http::Cookie::from("session_token"));
 
     Ok(())
 }
