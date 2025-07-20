@@ -10,7 +10,7 @@ pub mod db; // Our new db module
 use db::PgPool;
 use diesel::prelude::*;
 use rocket::fs::{FileServer, NamedFile};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use models::*;
 use rocket::http::{CookieJar, Status};
 use rocket::serde::json::Json;
@@ -18,7 +18,7 @@ use rocket::serde::{Deserialize, Serialize};
 use rocket::{Build, Rocket, State}; // Import State
 use uuid::Uuid;
 use dotenvy;
-use crate::services::auth::{Session, NewSession};
+use crate::services::auth::Session;
 use chrono::Utc;
 
 // Re-export AppUuid if it's used elsewhere, or remove if not needed
@@ -34,6 +34,8 @@ pub struct ErrorDetail {
 
 #[derive(Responder, Debug)]
 pub enum ApiError {
+    #[response(status = 400, content_type = "json")]
+    BadRequest(Json<ErrorDetail>),
     #[response(status = 404, content_type = "json")]
     NotFound(Json<ErrorDetail>),
     #[response(status = 401, content_type = "json")]
@@ -167,7 +169,7 @@ async fn register_user(
     pool: &State<PgPool>,
     auth_req: Json<AuthRequest>,
 ) -> Result<Json<UserInfo>, ApiError> {
-    services::auth::register_user(pool, auth_req)
+    Ok(services::auth::register_user(pool, auth_req)?)
 }
 
 #[post("/auth/login", data = "<auth_req>")]
@@ -176,7 +178,7 @@ async fn login_user(
     cookies: &CookieJar<'_>,
     auth_req: Json<AuthRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
-    services::auth::login_user(pool, cookies, auth_req)
+    Ok(services::auth::login_user(pool, cookies, auth_req)?)
 }
 
 #[post("/auth/logout")]
@@ -193,7 +195,7 @@ async fn add_todo_item(
     auth_user: AuthenticatedUser,
     create_req: Json<CreateTodoRequest>,
 ) -> Result<Json<TodoItem>, ApiError> {
-    services::todos::add_todo_item(pool, auth_user, create_req)
+    Ok(services::todos::add_todo_item(pool, auth_user, create_req)?)
 }
 
 #[get("/api/todos/<item_id_str>")]
@@ -202,7 +204,7 @@ async fn get_todo_item(
     auth_user: AuthenticatedUser,
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ApiError> {
-    services::todos::get_todo_item(pool, auth_user, item_id_str)
+    Ok(services::todos::get_todo_item(pool, auth_user, item_id_str)?)
 }
 
 #[put("/api/todos/<item_id_str>/complete")]
@@ -211,7 +213,7 @@ async fn complete_todo_item(
     auth_user: AuthenticatedUser,
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ApiError> {
-    services::todos::complete_todo_item(pool, auth_user, item_id_str)
+    Ok(services::todos::complete_todo_item(pool, auth_user, item_id_str)?)
 }
 
 #[delete("/api/todos/<item_id_str>")]
@@ -224,13 +226,6 @@ async fn delete_todo_item(
     Ok(Status::NoContent)
 }
 
-#[derive(Deserialize, Debug, rocket::form::FromForm)]
-#[serde(crate = "rocket::serde")]
-pub struct TodoSearchQuery {
-    description: Option<String>,
-    completed: Option<bool>, // Add this for filtering by completion status
-}
-
 // GET /api/todos (list all) and /api/todos/search?description=... (search by description)
 // Combined into one handler, also handling /api/todos?completed=true/false
 #[get("/api/todos?<search_query..>")]
@@ -239,7 +234,7 @@ async fn list_or_search_todos(
     auth_user: AuthenticatedUser,
     search_query: TodoSearchQuery,
 ) -> Result<Json<Vec<TodoItem>>, ApiError> {
-    services::todos::list_or_search_todos(pool, auth_user, search_query)
+    Ok(services::todos::list_or_search_todos(pool, auth_user, search_query)?)
 }
 
 
@@ -255,7 +250,7 @@ async fn get_todos_count(
     auth_user: AuthenticatedUser,
     search_query: TodoSearchQuery, // Re-use TodoSearchQuery for consistency
 ) -> Result<Json<i64>, ApiError> { // Diesel count returns i64
-    services::todos::get_todos_count(pool, auth_user, search_query)
+    Ok(services::todos::get_todos_count(pool, auth_user, search_query)?)
 }
 
 #[get("/")]

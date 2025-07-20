@@ -1,6 +1,6 @@
 use crate::db::PgPool;
 use crate::models::{NewTodoItem, TodoItem, CreateTodoRequest, TodoSearchQuery};
-use crate::schema::todo_items;
+use crate::schema::todo_items::{self};
 use diesel::prelude::*;
 use rocket::State;
 use rocket::serde::json::Json;
@@ -13,7 +13,7 @@ pub fn add_todo_item(
     auth_user: AuthenticatedUser,
     create_req: Json<CreateTodoRequest>,
 ) -> Result<Json<TodoItem>, ServiceError> {
-    use todo_items::dsl::*;
+    use crate::schema::todo_items::dsl::*;
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     let new_item = NewTodoItem {
@@ -32,7 +32,7 @@ pub fn get_todo_item(
     auth_user: AuthenticatedUser,
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ServiceError> {
-    use todo_items::dsl::*;
+    use crate::schema::todo_items::dsl::*;
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
         .map_err(|_| ServiceError::InvalidInput("Invalid UUID format".to_string()))?;
@@ -54,7 +54,7 @@ pub fn complete_todo_item(
     auth_user: AuthenticatedUser,
     item_id_str: String,
 ) -> Result<Json<TodoItem>, ServiceError> {
-    use todo_items::dsl::*;
+    use crate::schema::todo_items::dsl::*;
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
         .map_err(|_| ServiceError::InvalidInput("Invalid UUID format".to_string()))?;
@@ -70,22 +70,11 @@ pub fn complete_todo_item(
     }
 }
 
-fn _build_todo_query(
+fn _build_todo_query<'a>(
     auth_user: &AuthenticatedUser,
     search_query: &TodoSearchQuery,
-) -> diesel::query_builder::BoxedSelectStatement<
-    'static,
-    (
-        diesel::sql_types::Uuid,
-        diesel::sql_types::Uuid,
-        diesel::sql_types::Text,
-        diesel::sql_types::Bool,
-        diesel::sql_types::Timestamptz,
-    ),
-    todo_items::table,
-    diesel::pg::Pg,
-> {
-    use todo_items::dsl::*;
+) -> todo_items::BoxedQuery<'a, diesel::pg::Pg> {
+    use crate::schema::todo_items::dsl::*;
     let mut query = todo_items
         .filter(user_id.eq(auth_user.user_id))
         .into_boxed();
@@ -104,13 +93,12 @@ pub fn list_or_search_todos(
     auth_user: AuthenticatedUser,
     search_query: TodoSearchQuery,
 ) -> Result<Json<Vec<TodoItem>>, ServiceError> {
-    use todo_items::dsl::*;
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
 
     let query = _build_todo_query(&auth_user, &search_query);
 
     let items = query
-        .order(created_at.desc())
+        .order(todo_items::created_at.desc())
         .select(TodoItem::as_select())
         .load::<TodoItem>(&mut conn)?;
 
@@ -138,7 +126,7 @@ pub fn delete_todo_item(
     auth_user: AuthenticatedUser,
     item_id_str: String,
 ) -> Result<(), ServiceError> {
-    use todo_items::dsl::*;
+    use crate::schema::todo_items::dsl::*;
     let mut conn = pool.get().map_err(|_| ServiceError::InternalError("Failed to get DB connection".to_string()))?;
     let item_uuid = Uuid::parse_str(&item_id_str)
         .map_err(|_| ServiceError::InvalidInput("Invalid UUID format".to_string()))?;

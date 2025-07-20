@@ -73,3 +73,10 @@ pub struct NewTodoItem {
 pub struct CreateTodoRequest {
     pub description: String,
 }
+
+#[derive(Deserialize, Debug, rocket::form::FromForm)]
+#[serde(crate = "rocket::serde")]
+pub struct TodoSearchQuery {
+    description: Option<String>,
+    completed: Option<bool>, // Add this for filtering by completion status
+}
