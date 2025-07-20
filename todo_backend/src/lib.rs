@@ -423,7 +423,7 @@ pub fn rocket_instance() -> Rocket<Build> {
             ],
         )
         // Potentially add static file serving if it was part of the original app
-        .mount("/", FileServer::from(relative!("static"))) // Example for Rocket 0.5
+        .mount("/", FileServer::from(concat!(env!("CARGO_MANIFEST_DIR"), "/static"))) // Example for Rocket 0.5
 }
 
 // Add any necessary `use` statements at the top of lib.rs for new modules like `schema` and `models`.
