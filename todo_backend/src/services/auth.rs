@@ -1,6 +1,6 @@
 use crate::db::PgPool;
 use crate::models::{NewUser, User, UserInfo};
-use crate::schema::{users, sessions};
+use crate::schema::sessions;
 use diesel::prelude::*;
 use rocket::State;
 use rocket::serde::json::Json;
