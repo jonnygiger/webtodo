@@ -213,6 +213,16 @@ async fn complete_todo_item(
     services::todos::complete_todo_item(pool, auth_user, item_id_str)
 }
 
+#[delete("/api/todos/<item_id_str>")]
+async fn delete_todo_item(
+    pool: &State<PgPool>,
+    auth_user: AuthenticatedUser,
+    item_id_str: String,
+) -> Result<Status, ApiError> {
+    services::todos::delete_todo_item(pool, auth_user, item_id_str)?;
+    Ok(Status::NoContent)
+}
+
 #[derive(Deserialize, Debug, rocket::form::FromForm)]
 #[serde(crate = "rocket::serde")]
 pub struct TodoSearchQuery {
@@ -282,6 +292,7 @@ pub fn rocket_instance() -> Rocket<Build> {
                 add_todo_item,
                 get_todo_item,
                 complete_todo_item,
+                delete_todo_item,
                 list_or_search_todos, // This handles /api/todos and /api/todos?params
                 get_todos_count,
                 // Static file serving (if you had it before)

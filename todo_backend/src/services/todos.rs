@@ -73,14 +73,22 @@ pub fn complete_todo_item(
     }
 }
 
-pub fn list_or_search_todos(
-    pool: &State<PgPool>,
-    auth_user: AuthenticatedUser,
-    search_query: TodoSearchQuery,
-) -> Result<Json<Vec<TodoItem>>, ServiceError> {
+fn build_todo_query(
+    auth_user: &AuthenticatedUser,
+    search_query: &TodoSearchQuery,
+) -> diesel::query_builder::BoxedSelectStatement<
+    'static,
+    (
+        diesel::sql_types::Uuid,
+        diesel::sql_types::Uuid,
+        diesel::sql_types::Text,
+        diesel::sql_types::Bool,
+        diesel::sql_types::Timestamptz,
+    ),
+    todo_items::table,
+    diesel::pg::Pg,
+> {
     use todo_items::dsl::*;
-    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
-
     let mut query = todo_items
         .filter(user_id.eq(auth_user.user_id))
         .into_boxed();
@@ -91,6 +99,18 @@ pub fn list_or_search_todos(
     if let Some(comp_filter) = search_query.completed {
         query = query.filter(completed.eq(comp_filter));
     }
+    query
+}
+
+pub fn list_or_search_todos(
+    pool: &State<PgPool>,
+    auth_user: AuthenticatedUser,
+    search_query: TodoSearchQuery,
+) -> Result<Json<Vec<TodoItem>>, ServiceError> {
+    use todo_items::dsl::*;
+    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+
+    let query = build_todo_query(&auth_user, &search_query);
 
     let items = query
         .order(created_at.desc())
@@ -106,19 +126,9 @@ pub fn get_todos_count(
     auth_user: AuthenticatedUser,
     search_query: TodoSearchQuery,
 ) -> Result<Json<i64>, ServiceError> {
-    use todo_items::dsl::*;
     let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
 
-    let mut query = todo_items
-        .filter(user_id.eq(auth_user.user_id))
-        .into_boxed();
-
-    if let Some(ref desc_filter) = search_query.description {
-         query = query.filter(description.ilike(format!("%{}%", desc_filter)));
-    }
-    if let Some(comp_filter) = search_query.completed {
-        query = query.filter(completed.eq(comp_filter));
-    }
+    let query = build_todo_query(&auth_user, &search_query);
 
     let count_val = query
         .count()
@@ -126,4 +136,27 @@ pub fn get_todos_count(
         .map_err(|e| ServiceError::InternalError(format!("DB count query error: {}", e)))?;
 
     Ok(Json(count_val))
+}
+
+pub fn delete_todo_item(
+    pool: &State<PgPool>,
+    auth_user: AuthenticatedUser,
+    item_id_str: String,
+) -> Result<(), ServiceError> {
+    use todo_items::dsl::*;
+    let mut conn = pool.get().map_err(|e| ServiceError::InternalError(format!("DB Connection error: {}", e)))?;
+    let item_uuid = Uuid::parse_str(&item_id_str)
+        .map_err(|_| ServiceError::InternalError("Invalid UUID format".to_string()))?;
+
+    let target = todo_items.filter(id.eq(item_uuid).and(user_id.eq(auth_user.user_id)));
+
+    let num_deleted = diesel::delete(target)
+        .execute(&mut conn)
+        .map_err(|e| ServiceError::InternalError(format!("DB delete error: {}", e)))?;
+
+    if num_deleted > 0 {
+        Ok(())
+    } else {
+        Err(ServiceError::NotFound("Todo item not found or not owned by user".to_string()))
+    }
 }
