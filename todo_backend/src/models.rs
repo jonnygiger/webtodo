@@ -77,6 +77,6 @@ pub struct CreateTodoRequest {
 #[derive(Deserialize, Debug, rocket::form::FromForm)]
 #[serde(crate = "rocket::serde")]
 pub struct TodoSearchQuery {
-    description: Option<String>,
-    completed: Option<bool>, // Add this for filtering by completion status
+    pub description: Option<String>,
+    pub completed: Option<bool>, // Add this for filtering by completion status
 }
