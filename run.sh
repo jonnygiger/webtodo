@@ -14,6 +14,7 @@ if ! [ -x "$(command -v docker-compose)" ]; then
 fi
 
 echo "Starting application..."
+docker-compose down --volumes
 docker-compose up -d
 
 echo "Running database migrations..."
