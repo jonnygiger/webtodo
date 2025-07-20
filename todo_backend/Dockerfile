@@ -47,7 +47,7 @@ COPY --from=builder /usr/src/app/todo_backend/migrations /app/migrations/
 COPY --from=builder /usr/src/app/todo_backend/diesel.toml /app/diesel.toml
 
 # Copy static files if your application serves them
-# COPY todo_backend/static /app/static
+COPY todo_backend/static /app/static
 
 # Set working directory
 WORKDIR /app
