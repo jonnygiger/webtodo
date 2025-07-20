@@ -23,9 +23,20 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    sessions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        created_at -> Timestamp,
+        expires_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(todo_items -> users (user_id));
+diesel::joinable!(sessions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    sessions,
     todo_items,
     users,
 );
