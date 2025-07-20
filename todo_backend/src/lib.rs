@@ -9,7 +9,8 @@ pub mod db; // Our new db module
 
 use db::PgPool;
 use diesel::prelude::*;
-use rocket::fs::FileServer;
+use rocket::fs::{FileServer, NamedFile};
+use std::path::{Path, PathBuf};
 use models::*;
 use rocket::http::{CookieJar, Status};
 use rocket::serde::json::Json;
@@ -257,6 +258,11 @@ async fn get_todos_count(
     services::todos::get_todos_count(pool, auth_user, search_query)
 }
 
+#[get("/")]
+async fn index() -> Option<NamedFile> {
+    NamedFile::open(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/static/index.html"))).await.ok()
+}
+
 
 // --- Rocket instance setup ---
 
@@ -295,12 +301,13 @@ pub fn rocket_instance() -> Rocket<Build> {
                 delete_todo_item,
                 list_or_search_todos, // This handles /api/todos and /api/todos?params
                 get_todos_count,
+                index,
                 // Static file serving (if you had it before)
                 // e.g. rocket_contrib::serve::StaticFiles::from(concat!(env!("CARGO_MANIFEST_DIR"), "/static"))
             ],
         )
         // Potentially add static file serving if it was part of the original app
-        .mount("/", FileServer::from("/app/static")) // Example for Rocket 0.5
+        .mount("/static", FileServer::from(concat!(env!("CARGO_MANIFEST_DIR"), "/static")))
 }
 
 // Add any necessary `use` statements at the top of lib.rs for new modules like `schema` and `models`.
